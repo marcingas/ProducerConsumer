@@ -9,17 +9,16 @@ public class Main {
 
     public static void main(String[] args) {
 
-        List<String> buffer = new ArrayList<>();
+        ArrayBlockingQueue<String> buffer = new ArrayBlockingQueue<>(6);
 //        using Lock to prevent thread interference
-        ReentrantLock bufferLock = new ReentrantLock();
+//        ReentrantLock bufferLock = new ReentrantLock();
 
-        ExecutorService executorService = Executors.newFixedThreadPool(3);
+        ExecutorService executorService = Executors.newFixedThreadPool(5);
 
 
-
-        MyProducer producer = new MyProducer(buffer, ThreadColor.ANSI_YELLOW, bufferLock);
-        MyConsumer consumer1 = new MyConsumer(buffer, ThreadColor.ANSI_PURPLE, bufferLock);
-        MyConsumer consumer2 = new MyConsumer(buffer, ThreadColor.ANSI_CYAN, bufferLock);
+        MyProducer producer = new MyProducer(buffer, ThreadColor.ANSI_YELLOW);
+        MyConsumer consumer1 = new MyConsumer(buffer, ThreadColor.ANSI_PURPLE);
+        MyConsumer consumer2 = new MyConsumer(buffer, ThreadColor.ANSI_CYAN);
 
         executorService.execute(producer);
         executorService.execute(consumer1);
@@ -29,15 +28,15 @@ public class Main {
             @Override
             public String call() throws Exception {
                 System.out.println(ThreadColor.ANSI_CYAN + "Im being printed from callable class");
-                return "callable result" ;
+                return "callable result";
             }
         });
-        try{
+        try {
             System.out.println(future.get());
 
-        }catch (ExecutionException e){
+        } catch (ExecutionException e) {
             System.out.println("WRONG");
-        }catch (InterruptedException e){
+        } catch (InterruptedException e) {
             System.out.println("THread running the task was interrupted");
         }
 
@@ -48,14 +47,12 @@ public class Main {
 }
 
 class MyProducer implements Runnable {
-    private List<String> buffer;
+    private ArrayBlockingQueue<String> buffer;
     private String color;
-    private ReentrantLock bufferLock;
 
-    public MyProducer(List<String> buffer, String color, ReentrantLock bufferLock) {
+    public MyProducer(ArrayBlockingQueue<String> buffer, String color) {
         this.buffer = buffer;
         this.color = color;
-        this.bufferLock = bufferLock;
     }
 
     public void run() {
@@ -65,13 +62,7 @@ class MyProducer implements Runnable {
         for (String num : nums) {
             try {
                 System.out.println(color + "Adding ..." + num);
-                bufferLock.lock();
-//                working with try finally:
-                try {
-                    buffer.add(num);
-                } finally {
-                    bufferLock.unlock();
-                }
+                buffer.put(num);
 
                 Thread.sleep(random.nextInt(1000));
             } catch (InterruptedException e) {
@@ -79,52 +70,41 @@ class MyProducer implements Runnable {
             }
         }
         System.out.println(color + "Adding EOF and exiting...");
-        bufferLock.lock();
+
         try {
-            buffer.add("EOF");
-        } finally {//we quarantee with finally that no matter what happens in try block
-            //fe. wierd exception -> unlock will be performed.
-            bufferLock.unlock();
+            buffer.put("EOF");
+        } catch (InterruptedException e) {
         }
-
-
     }
 }
 
 class MyConsumer implements Runnable {
-    private List<String> buffer;
+    private ArrayBlockingQueue<String> buffer;
     private String color;
-    private ReentrantLock bufferLock;
 
-    public MyConsumer(List<String> buffer, String color, ReentrantLock bufferLock) {
+
+    public MyConsumer(ArrayBlockingQueue<String> buffer, String color) {
         this.buffer = buffer;
         this.color = color;
-        this.bufferLock = bufferLock;
+
     }
 
     public void run() {
-        int counter = 0;
-        while (true) {//try if lock is possible :
-            if (bufferLock.tryLock()) {
-                try {//we then only nedd one unlock here because no matter what -> unlock will perform.
+        while (true) {
+            synchronized (buffer) {
+                try {
                     if (buffer.isEmpty()) {
-//                    bufferLock.unlock();
                         continue;
                     }
-                    System.out.println(color + "The counter= " + counter);
-                    counter=0;
-                    if (buffer.get(0).equals(Main.EOF)) {
+
+                    if (buffer.peek().equals(Main.EOF)) {
                         System.out.println(color + "Exiting");
-//                    bufferLock.unlock();
                         break;
                     } else {
-                        System.out.println(color + "Removed " + buffer.remove(0));
+                        System.out.println(color + "Removed " + buffer.take());
                     }
-                } finally {
-                    bufferLock.unlock();
+                } catch (InterruptedException e) {
                 }
-            }else{
-                counter++;
             }
         }
     }
